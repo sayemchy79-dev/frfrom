@@ -67,6 +67,15 @@ function Index() {
     };
   }, [q]);
 
+  // Realtime: re-run the current search when any admission changes.
+  useEffect(() => {
+    if (!q.trim()) return;
+    const unsub = subscribeToAdmissions(() => {
+      searchAdmissions(q).then((rows) => setResults(rows));
+    });
+    return unsub;
+  }, [q]);
+
   const total = results?.length ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);

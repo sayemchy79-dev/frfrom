@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-r
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Pencil } from "lucide-react";
-import { deleteAdmission, getAdmission, type Admission } from "@/lib/backend";
+import { deleteAdmission, getAdmission, subscribeToAdmission, type Admission } from "@/lib/backend";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
