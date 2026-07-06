@@ -322,3 +322,88 @@ export async function searchAdmissions(query: string): Promise<Admission[]> {
   if (error) throw new Error(error.message);
   return (data as AdmissionRow[]).map(rowToAdmission);
 }
+
+// ===========================================================================
+// REALTIME
+// ===========================================================================
+type Change =
+  | { type: "INSERT"; row: Admission }
+  | { type: "UPDATE"; row: Admission; old: Partial<Admission> }
+  | { type: "DELETE"; row: Partial<Admission> };
+
+/**
+ * Subscribe to INSERT / UPDATE / DELETE on `admissions`.
+ * Returns an unsubscribe function.
+ *
+ * Requires that the table is added to the `supabase_realtime` publication
+ * (the `pluto-setup.sql` script does this).
+ */
+export function subscribeToAdmissions(onChange: (c: Change) => void): () => void {
+  const channel = pluto
+    .channel("admissions-changes")
+    .on(
+      // @ts-expect-error — postgres_changes is provided by realtime
+      "postgres_changes",
+      { event: "*", schema: "public", table: TABLE },
+      (payload: {
+        eventType: "INSERT" | "UPDATE" | "DELETE";
+        new: AdmissionRow | null;
+        old: Partial<AdmissionRow> | null;
+      }) => {
+        if (payload.eventType === "INSERT" && payload.new) {
+          onChange({ type: "INSERT", row: rowToAdmission(payload.new) });
+        } else if (payload.eventType === "UPDATE" && payload.new) {
+          onChange({
+            type: "UPDATE",
+            row: rowToAdmission(payload.new),
+            old: (payload.old ?? {}) as Partial<Admission>,
+          });
+        } else if (payload.eventType === "DELETE") {
+          onChange({
+            type: "DELETE",
+            row: { id: (payload.old?.id as string | undefined) ?? "" },
+          });
+        }
+      },
+    )
+    .subscribe();
+
+  return () => {
+    pluto.removeChannel(channel);
+  };
+}
+
+/** Subscribe to changes on a single admission row (by form number / id). */
+export function subscribeToAdmission(
+  id: string,
+  onChange: (c: Change) => void,
+): () => void {
+  const channel = pluto
+    .channel(`admission-${id}`)
+    .on(
+      // @ts-expect-error — postgres_changes is provided by realtime
+      "postgres_changes",
+      { event: "*", schema: "public", table: TABLE, filter: `id=eq.${id}` },
+      (payload: {
+        eventType: "INSERT" | "UPDATE" | "DELETE";
+        new: AdmissionRow | null;
+        old: Partial<AdmissionRow> | null;
+      }) => {
+        if (payload.eventType === "DELETE") {
+          onChange({ type: "DELETE", row: { id } });
+        } else if (payload.new) {
+          onChange({
+            type: payload.eventType,
+            row: rowToAdmission(payload.new),
+            old: (payload.old ?? {}) as Partial<Admission>,
+          });
+        }
+      },
+    )
+    .subscribe();
+
+  return () => {
+    pluto.removeChannel(channel);
+  };
+}
+
