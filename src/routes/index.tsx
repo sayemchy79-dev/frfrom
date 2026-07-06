@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { zodValidator, fallback } from "@tanstack/zod-adapter";
 import { z } from "zod";
-import { searchAdmissions, type Admission } from "@/lib/backend";
+import { searchAdmissions, subscribeToAdmissions, type Admission } from "@/lib/backend";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
