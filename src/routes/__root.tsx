@@ -94,6 +94,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "School Admission Portal" },
+      { name: "description", content: "Online school admission form portal with secure sign-up, submission, and student record search." },
+      { property: "og:description", content: "Online school admission form portal with secure sign-up, submission, and student record search." },
+      { name: "twitter:description", content: "Online school admission form portal with secure sign-up, submission, and student record search." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f107f1ca-8223-4fea-a4b9-fdfd8dbb4bda/id-preview-d71a35bf--93ed0f8d-0398-4ccc-8c7a-71c63b715f87.lovable.app-1783359934819.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f107f1ca-8223-4fea-a4b9-fdfd8dbb4bda/id-preview-d71a35bf--93ed0f8d-0398-4ccc-8c7a-71c63b715f87.lovable.app-1783359934819.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
