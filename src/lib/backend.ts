@@ -1,18 +1,15 @@
 /**
  * ============================================================================
- * BACKEND ABSTRACTION LAYER — REST API IMPLEMENTATION
+ * BACKEND ABSTRACTION LAYER — PLUTO (Supabase-compatible) IMPLEMENTATION
  * ============================================================================
+ * All calls go through the Pluto client in `./pluto-client.ts`. Row-level
+ * security on the Pluto side is what actually protects the data — the anon
+ * key shipped to the browser is safe by design.
  *
- * This file talks to YOUR own REST backend via `src/lib/api-client.ts`.
- * The base URL is configured through `VITE_API_BASE_URL` in `.env`.
- *
- * The exact endpoint contract your backend must implement is documented in
- * `BACKEND_INTEGRATION.md`. As long as your server matches that contract,
- * the whole app will work without any other code changes.
+ * See BACKEND_INTEGRATION.md for the required table schema and RLS policies.
  * ============================================================================
  */
-
-import { apiRequest, setToken } from "./api-client";
+import { pluto } from "./pluto-client";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,9 +21,9 @@ export type User = {
 };
 
 export type Admission = {
-  id: string;                 // form/admission number
+  id: string;                 // form/admission number (text primary key)
   createdAt: string;          // ISO date
-  createdBy: string;          // user id
+  createdBy: string;          // user id (uuid)
   // Student
   studentName: string;
   dateOfBirth: string;
@@ -52,6 +49,84 @@ export type Admission = {
 };
 
 // ---------------------------------------------------------------------------
+// Row <-> Domain mapping (DB uses snake_case)
+// ---------------------------------------------------------------------------
+type AdmissionRow = {
+  id: string;
+  created_at: string;
+  created_by: string;
+  student_name: string;
+  date_of_birth: string;
+  gender: "male" | "female" | "other";
+  blood_group: string | null;
+  religion: string | null;
+  nationality: string | null;
+  previous_school: string | null;
+  class_applying_for: string;
+  father_name: string;
+  mother_name: string;
+  guardian_name: string | null;
+  mobile: string;
+  alternate_mobile: string | null;
+  email: string | null;
+  address: string;
+  city: string | null;
+  postal_code: string | null;
+  notes: string | null;
+};
+
+function rowToAdmission(r: AdmissionRow): Admission {
+  return {
+    id: r.id,
+    createdAt: r.created_at,
+    createdBy: r.created_by,
+    studentName: r.student_name,
+    dateOfBirth: r.date_of_birth,
+    gender: r.gender,
+    bloodGroup: r.blood_group ?? undefined,
+    religion: r.religion ?? undefined,
+    nationality: r.nationality ?? undefined,
+    previousSchool: r.previous_school ?? undefined,
+    classApplyingFor: r.class_applying_for,
+    fatherName: r.father_name,
+    motherName: r.mother_name,
+    guardianName: r.guardian_name ?? undefined,
+    mobile: r.mobile,
+    alternateMobile: r.alternate_mobile ?? undefined,
+    email: r.email ?? undefined,
+    address: r.address,
+    city: r.city ?? undefined,
+    postalCode: r.postal_code ?? undefined,
+    notes: r.notes ?? undefined,
+  };
+}
+
+function admissionToRow(
+  a: Partial<Omit<Admission, "id" | "createdAt" | "createdBy">>,
+): Partial<Omit<AdmissionRow, "id" | "created_at" | "created_by">> {
+  const out: Record<string, unknown> = {};
+  if (a.studentName !== undefined) out.student_name = a.studentName;
+  if (a.dateOfBirth !== undefined) out.date_of_birth = a.dateOfBirth;
+  if (a.gender !== undefined) out.gender = a.gender;
+  if (a.bloodGroup !== undefined) out.blood_group = a.bloodGroup || null;
+  if (a.religion !== undefined) out.religion = a.religion || null;
+  if (a.nationality !== undefined) out.nationality = a.nationality || null;
+  if (a.previousSchool !== undefined) out.previous_school = a.previousSchool || null;
+  if (a.classApplyingFor !== undefined) out.class_applying_for = a.classApplyingFor;
+  if (a.fatherName !== undefined) out.father_name = a.fatherName;
+  if (a.motherName !== undefined) out.mother_name = a.motherName;
+  if (a.guardianName !== undefined) out.guardian_name = a.guardianName || null;
+  if (a.mobile !== undefined) out.mobile = a.mobile;
+  if (a.alternateMobile !== undefined) out.alternate_mobile = a.alternateMobile || null;
+  if (a.email !== undefined) out.email = a.email || null;
+  if (a.address !== undefined) out.address = a.address;
+  if (a.city !== undefined) out.city = a.city || null;
+  if (a.postalCode !== undefined) out.postal_code = a.postalCode || null;
+  if (a.notes !== undefined) out.notes = a.notes || null;
+  return out as Partial<Omit<AdmissionRow, "id" | "created_at" | "created_by">>;
+}
+
+// ---------------------------------------------------------------------------
 // Session cache (so `getCurrentUser` can stay synchronous)
 // ---------------------------------------------------------------------------
 const LS_SESSION = "sa_session";
@@ -71,127 +146,179 @@ function readCachedUser(): User | null {
   }
 }
 
-type AuthResponse = { token: string; user: User };
+// Keep cache in sync with Pluto auth state.
+if (typeof window !== "undefined") {
+  pluto.auth.onAuthStateChange((_event, session) => {
+    if (!session?.user) {
+      cacheUser(null);
+      return;
+    }
+    const u = session.user;
+    cacheUser({
+      id: u.id,
+      email: u.email ?? "",
+      name: (u.user_metadata?.name as string | undefined) ?? u.email ?? "",
+    });
+  });
+}
 
 // ===========================================================================
 // AUTH
 // ===========================================================================
-
 export async function signUp(input: {
   name: string;
   email: string;
   password: string;
 }): Promise<User> {
-  const res = await apiRequest<AuthResponse>("/auth/signup", {
-    method: "POST",
-    body: input,
-    anonymous: true,
+  const { data, error } = await pluto.auth.signUp({
+    email: input.email,
+    password: input.password,
+    options: { data: { name: input.name } },
   });
-  setToken(res.token);
-  cacheUser(res.user);
-  return res.user;
+  if (error) throw new Error(error.message);
+  if (!data.user) throw new Error("Sign-up did not return a user");
+  const user: User = {
+    id: data.user.id,
+    email: data.user.email ?? input.email,
+    name: input.name,
+  };
+  cacheUser(user);
+  return user;
 }
 
 export async function signIn(input: {
   email: string;
   password: string;
 }): Promise<User> {
-  const res = await apiRequest<AuthResponse>("/auth/login", {
-    method: "POST",
-    body: input,
-    anonymous: true,
+  const { data, error } = await pluto.auth.signInWithPassword({
+    email: input.email,
+    password: input.password,
   });
-  setToken(res.token);
-  cacheUser(res.user);
-  return res.user;
+  if (error) throw new Error(error.message);
+  if (!data.user) throw new Error("Sign-in did not return a user");
+  const user: User = {
+    id: data.user.id,
+    email: data.user.email ?? input.email,
+    name: (data.user.user_metadata?.name as string | undefined) ?? input.email,
+  };
+  cacheUser(user);
+  return user;
 }
 
 export async function signOut(): Promise<void> {
-  try {
-    await apiRequest("/auth/logout", { method: "POST" });
-  } catch {
-    // Ignore — we still clear the client session below.
-  }
-  setToken(null);
+  await pluto.auth.signOut();
   cacheUser(null);
 }
 
-/**
- * Synchronous — reads the cached user from localStorage.
- * Populated by signIn / signUp above. To re-validate against the server
- * on app boot, call `refreshCurrentUser()` (async) from your AuthProvider.
- */
+/** Synchronous — reads the cached user from localStorage. */
 export function getCurrentUser(): User | null {
   return readCachedUser();
 }
 
-/** Optional: re-fetches /auth/me to make sure the cached user is still valid. */
+/** Re-fetches the current session from Pluto and refreshes the cache. */
 export async function refreshCurrentUser(): Promise<User | null> {
-  try {
-    const res = await apiRequest<{ user: User }>("/auth/me");
-    cacheUser(res.user);
-    return res.user;
-  } catch {
-    setToken(null);
+  const { data } = await pluto.auth.getUser();
+  if (!data.user) {
     cacheUser(null);
     return null;
   }
+  const user: User = {
+    id: data.user.id,
+    email: data.user.email ?? "",
+    name: (data.user.user_metadata?.name as string | undefined) ?? data.user.email ?? "",
+  };
+  cacheUser(user);
+  return user;
 }
 
 // ===========================================================================
 // ADMISSIONS (CRUD + search)
 // ===========================================================================
+const TABLE = "admissions";
+
+function generateFormNumber(): string {
+  // Human-readable form number: ADM-<yyyymmdd>-<random 4>
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `ADM-${ymd}-${rand}`;
+}
 
 export async function createAdmission(
   input: Omit<Admission, "id" | "createdAt" | "createdBy">,
-  _userId: string,
+  userId: string,
 ): Promise<Admission> {
-  // `createdBy` is derived server-side from the auth token, so we don't send it.
-  return apiRequest<Admission>("/admissions", {
-    method: "POST",
-    body: input,
-  });
+  const row = {
+    id: generateFormNumber(),
+    created_by: userId,
+    ...admissionToRow(input),
+  };
+  const { data, error } = await pluto
+    .from(TABLE)
+    .insert(row)
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return rowToAdmission(data as AdmissionRow);
 }
 
 export async function listAdmissions(): Promise<Admission[]> {
-  return apiRequest<Admission[]>("/admissions");
+  const { data, error } = await pluto
+    .from(TABLE)
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data as AdmissionRow[]).map(rowToAdmission);
 }
 
 export async function getAdmission(id: string): Promise<Admission | null> {
-  try {
-    return await apiRequest<Admission>(`/admissions/${encodeURIComponent(id)}`);
-  } catch (err) {
-    if (err instanceof Error && "status" in err && (err as { status: number }).status === 404) {
-      return null;
-    }
-    throw err;
-  }
+  const { data, error } = await pluto
+    .from(TABLE)
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? rowToAdmission(data as AdmissionRow) : null;
 }
 
 export async function updateAdmission(
   id: string,
   patch: Partial<Omit<Admission, "id" | "createdAt" | "createdBy">>,
 ): Promise<Admission> {
-  return apiRequest<Admission>(`/admissions/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: patch,
-  });
+  const { data, error } = await pluto
+    .from(TABLE)
+    .update(admissionToRow(patch))
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return rowToAdmission(data as AdmissionRow);
 }
 
 export async function deleteAdmission(id: string): Promise<void> {
-  await apiRequest(`/admissions/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
+  const { error } = await pluto.from(TABLE).delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 /**
- * Search by form number, student name, or mobile.
- * The backend should match case-insensitively on all three fields.
+ * Search by form number (id), student name, or mobile.
+ * Uses PostgREST `or` filter with `ilike` for case-insensitive matching.
  */
 export async function searchAdmissions(query: string): Promise<Admission[]> {
   const q = query.trim();
   if (!q) return [];
-  return apiRequest<Admission[]>("/admissions/search", {
-    query: { q },
-  });
+  const esc = q.replace(/[,()]/g, " ");
+  const pattern = `*${esc}*`;
+  const { data, error } = await pluto
+    .from(TABLE)
+    .select("*")
+    .or(
+      `id.ilike.${pattern},student_name.ilike.${pattern},mobile.ilike.${pattern}`,
+    )
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(error.message);
+  return (data as AdmissionRow[]).map(rowToAdmission);
 }
