@@ -74,7 +74,7 @@ function Index() {
   const pageRows = results?.slice(start, start + PAGE_SIZE) ?? [];
 
   function goToPage(next: number) {
-    navigate({ search: (prev) => ({ ...prev, page: next }) });
+    navigate({ search: (prev: { q: string; page: number }) => ({ ...prev, page: next }) });
   }
 
   return (
