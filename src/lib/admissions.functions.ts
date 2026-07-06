@@ -14,11 +14,11 @@
  * ============================================================================
  */
 import { createServerFn } from "@tanstack/react-start";
-import { getWebRequest } from "@tanstack/react-start/server";
+import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 
 async function requireAuthedUser() {
-  const request = getWebRequest();
+  const request = getRequest();
   const auth = request?.headers.get("authorization") ?? "";
   const token = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7) : "";
   if (!token) throw new Error("Unauthorized");
