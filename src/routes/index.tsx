@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { zodValidator, fallback } from "@tanstack/zod-adapter";
 import { z } from "zod";
-import { searchAdmissions, type Admission } from "@/lib/backend";
+import { searchAdmissions, subscribeToAdmissions, type Admission } from "@/lib/backend";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -65,6 +65,15 @@ function Index() {
     return () => {
       cancelled = true;
     };
+  }, [q]);
+
+  // Realtime: re-run the current search when any admission changes.
+  useEffect(() => {
+    if (!q.trim()) return;
+    const unsub = subscribeToAdmissions(() => {
+      searchAdmissions(q).then((rows) => setResults(rows));
+    });
+    return unsub;
   }, [q]);
 
   const total = results?.length ?? 0;

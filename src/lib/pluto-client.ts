@@ -1,18 +1,16 @@
 /**
  * ============================================================================
- * PLUTO CLIENT
+ * PLUTO CLIENT (browser + auth)
  * ============================================================================
- * Pluto's API surface is Supabase / PostgREST-compatible, so we use
- * `@supabase/supabase-js` as the SDK and point it at the Pluto gateway.
- * Everything (`.auth`, `.from()`, `.storage`, `.channel`) works the same way
- * as the snippet in the Pluto docs:
+ * Pluto's API is Supabase / PostgREST-compatible, so we use
+ * `@supabase/supabase-js` and point it at the Pluto gateway.
  *
  *   const pluto = createClient(PLUTO_URL, PLUTO_ANON_KEY);
- *   await pluto.auth.signInWithPassword({ email, password });
- *   await pluto.from("posts").select("*");
  *
- * If Pluto ships an official `@pluto/js` package later, swap the import here —
- * nothing else in the app needs to change.
+ * Session is persisted in localStorage and refreshed automatically, so login
+ * survives reloads and expired access tokens are transparently swapped.
+ * The service-role client lives in `pluto-admin.server.ts` and is ONLY
+ * imported by server functions — never ship it to the browser.
  * ============================================================================
  */
 import { createClient } from "@supabase/supabase-js";
@@ -27,10 +25,22 @@ if (!PLUTO_URL || !PLUTO_ANON_KEY) {
   );
 }
 
-export const pluto = createClient(PLUTO_URL ?? "http://localhost", PLUTO_ANON_KEY ?? "anon", {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    storageKey: "sa_pluto_session",
+export const pluto = createClient(
+  PLUTO_URL ?? "http://localhost",
+  PLUTO_ANON_KEY ?? "anon",
+  {
+    auth: {
+      // Persist the session across reloads.
+      persistSession: true,
+      // Silently refresh the access token before it expires.
+      autoRefreshToken: true,
+      // Handle magic-link / OAuth callbacks that append tokens to the URL.
+      detectSessionInUrl: true,
+      storageKey: "sa_pluto_session",
+      flowType: "pkce",
+    },
+    realtime: {
+      params: { eventsPerSecond: 10 },
+    },
   },
-});
+);

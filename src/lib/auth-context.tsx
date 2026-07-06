@@ -1,5 +1,13 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { getCurrentUser, signIn as apiSignIn, signOut as apiSignOut, signUp as apiSignUp, type User } from "./backend";
+import {
+  getCurrentUser,
+  refreshCurrentUser,
+  signIn as apiSignIn,
+  signOut as apiSignOut,
+  signUp as apiSignUp,
+  type User,
+} from "./backend";
+import { pluto } from "./pluto-client";
 
 type AuthCtx = {
   user: User | null;
@@ -12,12 +20,44 @@ type AuthCtx = {
 const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => getCurrentUser());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setUser(getCurrentUser());
-    setLoading(false);
+    let cancelled = false;
+
+    // Revalidate the cached user against Pluto on mount so a stale/expired
+    // session doesn't silently 401 every subsequent API call.
+    refreshCurrentUser()
+      .then((u) => {
+        if (!cancelled) setUser(u);
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    // Keep local state in sync with Pluto: covers TOKEN_REFRESHED,
+    // SIGNED_IN / SIGNED_OUT from other tabs, and USER_UPDATED.
+    const { data: sub } = pluto.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        setUser(null);
+        return;
+      }
+      const u = session.user;
+      setUser({
+        id: u.id,
+        email: u.email ?? "",
+        name: (u.user_metadata?.name as string | undefined) ?? u.email ?? "",
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const value: AuthCtx = {

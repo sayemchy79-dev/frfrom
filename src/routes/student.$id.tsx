@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-r
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Pencil } from "lucide-react";
-import { deleteAdmission, getAdmission, type Admission } from "@/lib/backend";
+import { deleteAdmission, getAdmission, subscribeToAdmission, type Admission } from "@/lib/backend";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,11 @@ function StudentDetail() {
 
   useEffect(() => {
     getAdmission(id).then(setRecord);
+    const unsub = subscribeToAdmission(id, (c) => {
+      if (c.type === "DELETE") setRecord(null);
+      else setRecord(c.row);
+    });
+    return unsub;
   }, [id]);
 
   if (record === undefined) {
