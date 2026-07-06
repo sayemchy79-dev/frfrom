@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as StudentIdRouteImport } from './routes/student.$id'
 import { Route as AuthenticatedAdmissionsRouteImport } from './routes/_authenticated/admissions'
 import { Route as AuthenticatedAdmissionRouteImport } from './routes/_authenticated/admission'
+import { Route as AuthenticatedAdmissionIdEditRouteImport } from './routes/_authenticated/admission.$id.edit'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -45,35 +46,56 @@ const AuthenticatedAdmissionRoute = AuthenticatedAdmissionRouteImport.update({
   path: '/admission',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAdmissionIdEditRoute =
+  AuthenticatedAdmissionIdEditRouteImport.update({
+    id: '/$id/edit',
+    path: '/$id/edit',
+    getParentRoute: () => AuthenticatedAdmissionRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/admission': typeof AuthenticatedAdmissionRoute
+  '/admission': typeof AuthenticatedAdmissionRouteWithChildren
   '/admissions': typeof AuthenticatedAdmissionsRoute
   '/student/$id': typeof StudentIdRoute
+  '/admission/$id/edit': typeof AuthenticatedAdmissionIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/admission': typeof AuthenticatedAdmissionRoute
+  '/admission': typeof AuthenticatedAdmissionRouteWithChildren
   '/admissions': typeof AuthenticatedAdmissionsRoute
   '/student/$id': typeof StudentIdRoute
+  '/admission/$id/edit': typeof AuthenticatedAdmissionIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
-  '/_authenticated/admission': typeof AuthenticatedAdmissionRoute
+  '/_authenticated/admission': typeof AuthenticatedAdmissionRouteWithChildren
   '/_authenticated/admissions': typeof AuthenticatedAdmissionsRoute
   '/student/$id': typeof StudentIdRoute
+  '/_authenticated/admission/$id/edit': typeof AuthenticatedAdmissionIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/admission' | '/admissions' | '/student/$id'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/admission'
+    | '/admissions'
+    | '/student/$id'
+    | '/admission/$id/edit'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/admission' | '/admissions' | '/student/$id'
+  to:
+    | '/'
+    | '/auth'
+    | '/admission'
+    | '/admissions'
+    | '/student/$id'
+    | '/admission/$id/edit'
   id:
     | '__root__'
     | '/'
@@ -82,6 +104,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admission'
     | '/_authenticated/admissions'
     | '/student/$id'
+    | '/_authenticated/admission/$id/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -135,16 +158,37 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdmissionRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/admission/$id/edit': {
+      id: '/_authenticated/admission/$id/edit'
+      path: '/$id/edit'
+      fullPath: '/admission/$id/edit'
+      preLoaderRoute: typeof AuthenticatedAdmissionIdEditRouteImport
+      parentRoute: typeof AuthenticatedAdmissionRoute
+    }
   }
 }
 
+interface AuthenticatedAdmissionRouteChildren {
+  AuthenticatedAdmissionIdEditRoute: typeof AuthenticatedAdmissionIdEditRoute
+}
+
+const AuthenticatedAdmissionRouteChildren: AuthenticatedAdmissionRouteChildren =
+  {
+    AuthenticatedAdmissionIdEditRoute: AuthenticatedAdmissionIdEditRoute,
+  }
+
+const AuthenticatedAdmissionRouteWithChildren =
+  AuthenticatedAdmissionRoute._addFileChildren(
+    AuthenticatedAdmissionRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
-  AuthenticatedAdmissionRoute: typeof AuthenticatedAdmissionRoute
+  AuthenticatedAdmissionRoute: typeof AuthenticatedAdmissionRouteWithChildren
   AuthenticatedAdmissionsRoute: typeof AuthenticatedAdmissionsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedAdmissionRoute: AuthenticatedAdmissionRoute,
+  AuthenticatedAdmissionRoute: AuthenticatedAdmissionRouteWithChildren,
   AuthenticatedAdmissionsRoute: AuthenticatedAdmissionsRoute,
 }
 

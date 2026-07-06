@@ -1,31 +1,80 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import { Search } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { zodValidator, fallback } from "@tanstack/zod-adapter";
+import { z } from "zod";
 import { searchAdmissions, type Admission } from "@/lib/backend";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
+const PAGE_SIZE = 5;
+
+const searchSchema = z.object({
+  q: fallback(z.string(), "").default(""),
+  page: fallback(z.number().int().min(1), 1).default(1),
+});
+
 export const Route = createFileRoute("/")({
+  validateSearch: zodValidator(searchSchema),
   component: Index,
 });
 
 function Index() {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Admission[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+  const { q, page } = Route.useSearch();
+  const navigate = useNavigate({ from: "/" });
 
-  async function onSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) return;
-    setLoading(true);
-    try {
-      const rows = await searchAdmissions(query);
-      setResults(rows);
-    } finally {
-      setLoading(false);
+  // local input mirrors URL, updated on every keystroke; URL updates after debounce
+  const [input, setInput] = useState(q);
+  const [results, setResults] = useState<Admission[] | null>(q ? null : null);
+  const [loading, setLoading] = useState(false);
+
+  // Debounce URL updates
+  useEffect(() => {
+    if (input === q) return;
+    const t = setTimeout(() => {
+      navigate({
+        search: { q: input, page: 1 },
+        replace: true,
+      });
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input]);
+
+  // Keep local input in sync if URL changes externally (back button, etc.)
+  useEffect(() => {
+    setInput(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
+
+  // Run the actual search whenever the URL query changes
+  useEffect(() => {
+    let cancelled = false;
+    if (!q.trim()) {
+      setResults(null);
+      return;
     }
+    setLoading(true);
+    searchAdmissions(q).then((rows) => {
+      if (!cancelled) {
+        setResults(rows);
+        setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [q]);
+
+  const total = results?.length ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const pageRows = results?.slice(start, start + PAGE_SIZE) ?? [];
+
+  function goToPage(next: number) {
+    navigate({ search: (prev: { q: string; page: number }) => ({ ...prev, page: next }) });
   }
 
   return (
@@ -38,20 +87,31 @@ function Index() {
           Search admissions by form number, student name, or mobile number.
         </p>
 
-        <form onSubmit={onSearch} className="mx-auto mt-8 flex max-w-2xl gap-2">
+        <div className="mx-auto mt-8 flex max-w-2xl gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
               placeholder="e.g. ADM-2026-123456 · Rahim · 01712345678"
               className="pl-9 h-11"
+              autoFocus
             />
           </div>
-          <Button type="submit" size="lg" disabled={loading}>
-            {loading ? "Searching…" : "Search"}
-          </Button>
-        </form>
+          {input && (
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={() => {
+                setInput("");
+                navigate({ search: { q: "", page: 1 }, replace: true });
+              }}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
 
         <div className="mt-4">
           <Link
@@ -62,19 +122,30 @@ function Index() {
           </Link>
         </div>
 
-        {results !== null && (
+        {q.trim() && (
           <div className="mx-auto mt-10 max-w-2xl space-y-3 text-left">
-            <h2 className="text-sm font-medium text-muted-foreground">
-              {results.length} result{results.length === 1 ? "" : "s"}
-            </h2>
-            {results.length === 0 && (
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-muted-foreground">
+                {loading
+                  ? "Searching…"
+                  : `${total} result${total === 1 ? "" : "s"} for “${q}”`}
+              </h2>
+              {totalPages > 1 && (
+                <span className="text-sm text-muted-foreground">
+                  Page {safePage} of {totalPages}
+                </span>
+              )}
+            </div>
+
+            {!loading && total === 0 && (
               <Card>
                 <CardContent className="py-8 text-center text-muted-foreground">
-                  No admissions match “{query}”.
+                  No admissions match “{q}”.
                 </CardContent>
               </Card>
             )}
-            {results.map((a) => (
+
+            {pageRows.map((a) => (
               <Card
                 key={a.id}
                 className="cursor-pointer transition hover:border-primary"
@@ -84,9 +155,7 @@ function Index() {
               >
                 <CardContent className="flex items-center justify-between py-4">
                   <div>
-                    <p className="font-semibold text-foreground">
-                      {a.studentName}
-                    </p>
+                    <p className="font-semibold text-foreground">{a.studentName}</p>
                     <p className="text-sm text-muted-foreground">
                       {a.id} · Class {a.classApplyingFor} · {a.mobile}
                     </p>
@@ -95,6 +164,29 @@ function Index() {
                 </CardContent>
               </Card>
             ))}
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage <= 1}
+                  onClick={() => goToPage(safePage - 1)}
+                >
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Prev
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage >= totalPages}
+                  onClick={() => goToPage(safePage + 1)}
+                >
+                  Next
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </section>

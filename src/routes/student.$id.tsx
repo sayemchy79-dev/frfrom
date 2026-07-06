@@ -1,8 +1,12 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getAdmission, type Admission } from "@/lib/backend";
+import { toast } from "sonner";
+import { Pencil } from "lucide-react";
+import { deleteAdmission, getAdmission, type Admission } from "@/lib/backend";
+import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DeleteButton } from "@/routes/_authenticated/admissions";
 
 export const Route = createFileRoute("/student/$id")({
   component: StudentDetail,
@@ -10,6 +14,8 @@ export const Route = createFileRoute("/student/$id")({
 
 function StudentDetail() {
   const { id } = useParams({ from: "/student/$id" });
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [record, setRecord] = useState<Admission | null | undefined>(undefined);
 
   useEffect(() => {
@@ -36,23 +42,49 @@ function StudentDetail() {
   }
 
   const r = record;
+  const canManage = !!user;
+
   return (
     <main className="min-h-[calc(100vh-56px)] bg-muted/30 px-4 py-10">
       <div className="mx-auto max-w-3xl space-y-6">
-        <div className="flex items-start justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-sm text-muted-foreground">Admission form</p>
-            <h1 className="text-3xl font-bold text-foreground">
-              {r.studentName}
-            </h1>
+            <h1 className="text-3xl font-bold text-foreground">{r.studentName}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {r.id} · Submitted{" "}
-              {new Date(r.createdAt).toLocaleString()}
+              {r.id} · Submitted {new Date(r.createdAt).toLocaleString()}
             </p>
           </div>
-          <Link to="/">
-            <Button variant="outline">Back</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            {canManage && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    navigate({ to: "/admission/$id/edit", params: { id: r.id } })
+                  }
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </Button>
+                <DeleteButton
+                  label={r.studentName}
+                  onConfirm={async () => {
+                    try {
+                      await deleteAdmission(r.id);
+                      toast.success("Admission deleted");
+                      navigate({ to: "/admissions" });
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Failed to delete");
+                    }
+                  }}
+                />
+              </>
+            )}
+            <Link to="/">
+              <Button variant="ghost">Back</Button>
+            </Link>
+          </div>
         </div>
 
         <Section title="Student Information">
@@ -83,9 +115,7 @@ function StudentDetail() {
 
         {r.notes && (
           <Section title="Notes">
-            <p className="text-sm text-foreground whitespace-pre-wrap">
-              {r.notes}
-            </p>
+            <p className="whitespace-pre-wrap text-sm text-foreground">{r.notes}</p>
           </Section>
         )}
       </div>
@@ -93,13 +123,7 @@ function StudentDetail() {
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <Card>
       <CardHeader>
@@ -114,9 +138,7 @@ function Row({ k, v }: { k: string; v?: string }) {
   if (!v) return null;
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">
-        {k}
-      </span>
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">{k}</span>
       <span className="text-sm text-foreground">{v}</span>
     </div>
   );
