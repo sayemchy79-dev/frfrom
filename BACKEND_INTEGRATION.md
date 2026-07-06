@@ -1,196 +1,36 @@
-# Backend Integration Guide — Custom REST API
+# Pluto Backend Integration
 
-This frontend talks to **your own REST backend** through a single tiny
-client at `src/lib/api-client.ts`. All app-level calls go through
-`src/lib/backend.ts`, which is just a thin wrapper around that client.
-
-You do **not** need to change any UI code. Just:
-
-1. Set `VITE_API_BASE_URL` in `.env` to point at your backend.
-2. Implement the endpoints listed below with the request/response shapes
-   described.
-
-That's it — the whole app (auth, form submit, list, edit, delete, search,
-pagination) will work.
-
----
+The app talks to **Pluto** (a Supabase / PostgREST-compatible BaaS) through
+`@supabase/supabase-js`, which is 100% API-compatible with the snippet in the
+Pluto docs. If Pluto later publishes an official `@pluto/js` package, swap the
+import in `src/lib/pluto-client.ts` — nothing else changes.
 
 ## 1. Environment variables
 
-`.env` (already scaffolded — copy from `.env.example`):
+Copy `.env.example` to `.env` and fill in the values from your Pluto dashboard
+(**Dashboard → Tokens**):
 
-```
-VITE_API_BASE_URL=http://localhost:4000/api
-VITE_API_KEY=              # optional: static X-Api-Key header
-```
-
-- `VITE_API_BASE_URL` — no trailing slash. Every endpoint path below is
-  appended to this.
-- `VITE_API_KEY` — optional. If set, sent as `X-Api-Key: <value>` on every
-  request (useful for gateway-level auth or Postman/Firebase-style project
-  keys).
-
-Per-user auth uses a JWT that your `/auth/login` endpoint returns; the
-frontend stores it in `localStorage` under `sa_token` and sends it as
-`Authorization: Bearer <token>` on every request automatically.
-
----
-
-## 2. Authentication endpoints
-
-All auth endpoints return the same shape:
-
-```jsonc
-{
-  "token": "<jwt or opaque token>",
-  "user": { "id": "u_123", "email": "a@b.com", "name": "Ada" }
-}
+```env
+VITE_PLUTO_URL=https://api.timescard.cloud
+VITE_PLUTO_ANON_KEY=pk_anon_xxxxx
 ```
 
-### `POST /auth/signup`
-Request:
-```json
-{ "name": "Ada Lovelace", "email": "a@b.com", "password": "secret123" }
-```
-Response: `{ token, user }` — same shape as above.
+Both variables must be prefixed with `VITE_` so Vite exposes them to the
+browser. **Never** put the service-role key (`sk_svc_...`) in a `VITE_*`
+variable — it bypasses row-level security and must stay on your own server.
 
-- 409 if the email already exists (`{ "message": "Email already in use" }`).
+## 2. Database schema
 
-### `POST /auth/login`
-Request:
-```json
-{ "email": "a@b.com", "password": "secret123" }
-```
-Response: `{ token, user }`.
-
-- 401 on invalid credentials (`{ "message": "Invalid email or password" }`).
-
-### `POST /auth/logout`
-No body. Response: `{}` (any 2xx is fine).
-Invalidate the token server-side if you keep a session table.
-
-### `GET /auth/me`  (optional but recommended)
-Authenticated. Response: `{ "user": { id, email, name } }`.
-Used by `refreshCurrentUser()` on app boot to make sure a stale token in
-localStorage still works.
-
----
-
-## 3. Admission endpoints
-
-All admission endpoints require `Authorization: Bearer <token>` **except**
-`GET /admissions/:id` and `GET /admissions/search`, which the homepage
-uses without a login. If you want to lock those down too, add auth there
-and the app still works (the user will just have to be logged in).
-
-### The `Admission` object
-
-```ts
-{
-  id: string;              // form number, e.g. "ADM-2026-000123"
-  createdAt: string;       // ISO 8601
-  createdBy: string;       // user id
-
-  studentName: string;
-  dateOfBirth: string;     // "YYYY-MM-DD"
-  gender: "male" | "female" | "other";
-  bloodGroup?: string;
-  religion?: string;
-  nationality?: string;
-  previousSchool?: string;
-  classApplyingFor: string;
-
-  fatherName: string;
-  motherName: string;
-  guardianName?: string;
-
-  mobile: string;
-  alternateMobile?: string;
-  email?: string;
-  address: string;
-  city?: string;
-  postalCode?: string;
-
-  notes?: string;
-}
-```
-
-The backend is responsible for generating `id` and `createdAt` and setting
-`createdBy` from the auth token — the frontend does **not** send them on
-create.
-
-### `POST /admissions`  *(auth required)*
-Body: an `Admission` **without** `id`, `createdAt`, `createdBy`.
-Response: the full created `Admission`.
-
-### `GET /admissions`  *(auth required)*
-Response: `Admission[]`, ordered by `createdAt` desc.
-
-### `GET /admissions/:id`
-Response: single `Admission`, or `404` if not found.
-
-### `PATCH /admissions/:id`  *(auth required)*
-Body: any subset of `Admission` fields (except `id`, `createdAt`,
-`createdBy`).
-Response: the updated `Admission`.
-
-### `DELETE /admissions/:id`  *(auth required)*
-Response: `204 No Content` or `{}`.
-
-### `GET /admissions/search?q=<query>`
-Case-insensitive partial match against `id`, `studentName`, and `mobile`.
-Response: `Admission[]`.
-
----
-
-## 4. Error format
-
-Any non-2xx response should return JSON like:
-
-```json
-{ "message": "Human-readable error" }
-```
-
-`error` is also accepted as an alias. The frontend surfaces `message` in
-toasts.
-
----
-
-## 5. CORS
-
-Your backend must allow the frontend origin. Minimum headers to allow:
-
-```
-Access-Control-Allow-Origin: <your frontend origin, or *>
-Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS
-Access-Control-Allow-Headers: Content-Type, Authorization, X-Api-Key
-Access-Control-Allow-Credentials: true
-```
-
-The client sends `credentials: "include"`, so if you use cookies for auth
-you must echo an explicit origin (not `*`).
-
----
-
-## 6. Reference SQL schema (Postgres)
-
-Non-normative — use whatever DB you want. This mirrors the `Admission`
-type one-to-one.
+Run this SQL in the Pluto SQL editor. It creates one `admissions` table with
+row-level security enabled.
 
 ```sql
-create table users (
-  id           text primary key,
-  email        text unique not null,
-  name         text not null,
-  password_hash text not null,
-  created_at   timestamptz not null default now()
-);
-
-create table admissions (
-  id                  text primary key,     -- e.g. ADM-2026-000123
+create table public.admissions (
+  id                  text primary key,                       -- form number, e.g. ADM-20260706-4821
   created_at          timestamptz not null default now(),
-  created_by          text not null references users(id) on delete cascade,
+  created_by          uuid not null references auth.users(id) on delete cascade,
 
+  -- Student
   student_name        text not null,
   date_of_birth       date not null,
   gender              text not null check (gender in ('male','female','other')),
@@ -200,10 +40,12 @@ create table admissions (
   previous_school     text,
   class_applying_for  text not null,
 
+  -- Parents
   father_name         text not null,
   mother_name         text not null,
   guardian_name       text,
 
+  -- Contact
   mobile              text not null,
   alternate_mobile    text,
   email               text,
@@ -214,60 +56,65 @@ create table admissions (
   notes               text
 );
 
-create index admissions_student_name_idx on admissions (lower(student_name));
-create index admissions_mobile_idx        on admissions (mobile);
+-- Search performance
+create index admissions_student_name_trgm on public.admissions using gin (student_name gin_trgm_ops);
+create index admissions_mobile_idx        on public.admissions (mobile);
+create index admissions_created_at_idx    on public.admissions (created_at desc);
+
+-- Grants (PostgREST won't expose the table without these)
+grant select, insert, update, delete on public.admissions to authenticated;
+
+-- Row Level Security
+alter table public.admissions enable row level security;
+
+create policy "auth users can read all admissions"
+  on public.admissions for select to authenticated using (true);
+
+create policy "auth users can insert their own"
+  on public.admissions for insert to authenticated
+  with check (created_by = auth.uid());
+
+create policy "auth users can update any admission"
+  on public.admissions for update to authenticated using (true);
+
+create policy "auth users can delete any admission"
+  on public.admissions for delete to authenticated using (true);
 ```
 
----
+> Adjust the update/delete policies to `using (created_by = auth.uid())` if
+> you want each user to manage only their own records.
 
-## 7. Minimal Node/Express reference (server side)
+## 3. Auth
 
-Just to show the exact wire format — you can implement in any language.
+Email/password auth is turned on by default in Pluto. Sign-up stores the
+user's display name inside `user_metadata.name`, which the frontend reads back
+via `pluto.auth.getUser()`.
 
-```js
-// POST /auth/login
-app.post("/api/auth/login", async (req, res) => {
-  const { email, password } = req.body;
-  const user = await db.users.findByEmail(email);
-  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-    return res.status(401).json({ message: "Invalid email or password" });
-  }
-  const token = jwt.sign({ sub: user.id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-  res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
-});
+Recommended dashboard settings:
 
-// GET /api/admissions/search?q=...
-app.get("/api/admissions/search", async (req, res) => {
-  const q = `%${(req.query.q || "").toLowerCase()}%`;
-  const rows = await db.query(
-    `select * from admissions
-       where lower(id) like $1
-          or lower(student_name) like $1
-          or lower(mobile) like $1
-       order by created_at desc
-       limit 100`,
-    [q],
-  );
-  res.json(rows.map(toAdmissionDTO));
-});
-```
+- Enable **Email/Password** provider.
+- Disable **Confirm email** for local development, re-enable in production.
+- Set the **Site URL** to your deployed frontend URL.
 
----
+## 4. Frontend surface
 
-## 8. Files reference
+Everything the UI needs lives in **`src/lib/backend.ts`**:
 
-| File                          | Purpose |
-|-------------------------------|---------|
-| `.env` / `.env.example`       | `VITE_API_BASE_URL`, optional `VITE_API_KEY` |
-| `src/lib/api-client.ts`       | Generic `fetch` wrapper (auth, headers, errors) |
-| `src/lib/backend.ts`          | Maps app operations onto the REST endpoints above |
-| `src/lib/auth-context.tsx`    | React context wrapping the auth calls |
-| `src/routes/__root.tsx`       | Layout, header, providers |
-| `src/routes/index.tsx`        | Homepage with debounced search + pagination |
-| `src/routes/auth.tsx`         | Sign in / Sign up |
-| `src/routes/_authenticated/*` | Protected routes (form, list, edit) |
-| `src/routes/student.$id.tsx`  | Public student detail page |
+| Function                              | What it does                                    |
+| ------------------------------------- | ----------------------------------------------- |
+| `signUp / signIn / signOut`           | Wraps `pluto.auth.*`                            |
+| `getCurrentUser / refreshCurrentUser` | Cached + live session lookup                    |
+| `createAdmission`                     | Inserts into `admissions`, generates form no.   |
+| `listAdmissions`                      | Newest-first list                               |
+| `getAdmission(id)`                    | Fetch by form number                            |
+| `updateAdmission(id, patch)`          | Partial update                                  |
+| `deleteAdmission(id)`                 | Delete row                                      |
+| `searchAdmissions(q)`                 | Case-insensitive search on id / name / mobile   |
 
-If you later want to switch to Supabase/Firebase/Appwrite, only
-`src/lib/backend.ts` (and optionally `api-client.ts`) needs to change —
-nothing in the UI depends on the transport.
+All calls go through the shared client in **`src/lib/pluto-client.ts`**.
+
+## 5. Switching providers later
+
+If you move from Pluto to real Supabase, Firebase, or your own API, only
+`src/lib/pluto-client.ts` and `src/lib/backend.ts` need to change. Every route
+and component imports the same typed functions from `@/lib/backend`.
