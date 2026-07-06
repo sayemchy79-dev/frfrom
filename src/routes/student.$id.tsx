@@ -20,6 +20,11 @@ function StudentDetail() {
 
   useEffect(() => {
     getAdmission(id).then(setRecord);
+    const unsub = subscribeToAdmission(id, (c) => {
+      if (c.type === "DELETE") setRecord(null);
+      else setRecord(c.row);
+    });
+    return unsub;
   }, [id]);
 
   if (record === undefined) {
