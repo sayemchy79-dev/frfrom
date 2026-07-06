@@ -1,19 +1,22 @@
 /**
  * ============================================================================
- * BACKEND ABSTRACTION LAYER
+ * BACKEND ABSTRACTION LAYER — REST API IMPLEMENTATION
  * ============================================================================
  *
- * This is the ONLY file you need to modify to connect a real backend
- * (Supabase, Firebase, custom REST API, etc.).
+ * This file talks to YOUR own REST backend via `src/lib/api-client.ts`.
+ * The base URL is configured through `VITE_API_BASE_URL` in `.env`.
  *
- * The default implementation uses `localStorage` so the app is fully
- * functional out of the box for demo/dev. Replace the function bodies
- * below with real API calls when you wire up your backend.
- *
- * See BACKEND_INTEGRATION.md for step-by-step Supabase & Firebase examples.
+ * The exact endpoint contract your backend must implement is documented in
+ * `BACKEND_INTEGRATION.md`. As long as your server matches that contract,
+ * the whole app will work without any other code changes.
  * ============================================================================
  */
 
+import { apiRequest, setToken } from "./api-client";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 export type User = {
   id: string;
   email: string;
@@ -21,7 +24,7 @@ export type User = {
 };
 
 export type Admission = {
-  id: string;                 // form/admission number (auto-generated)
+  id: string;                 // form/admission number
   createdAt: string;          // ISO date
   createdBy: string;          // user id
   // Student
@@ -38,7 +41,7 @@ export type Admission = {
   motherName: string;
   guardianName?: string;
   // Contact
-  mobile: string;             // primary searchable phone
+  mobile: string;
   alternateMobile?: string;
   email?: string;
   address: string;
@@ -49,196 +52,146 @@ export type Admission = {
 };
 
 // ---------------------------------------------------------------------------
-// Storage keys (used only by the localStorage fallback)
+// Session cache (so `getCurrentUser` can stay synchronous)
 // ---------------------------------------------------------------------------
-const LS_USERS = "sa_users";
 const LS_SESSION = "sa_session";
-const LS_ADMISSIONS = "sa_admissions";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function read<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
+function cacheUser(user: User | null) {
+  if (typeof window === "undefined") return;
+  if (user) window.localStorage.setItem(LS_SESSION, JSON.stringify(user));
+  else window.localStorage.removeItem(LS_SESSION);
+}
+function readCachedUser(): User | null {
+  if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    const raw = window.localStorage.getItem(LS_SESSION);
+    return raw ? (JSON.parse(raw) as User) : null;
   } catch {
-    return fallback;
+    return null;
   }
 }
-function write<T>(key: string, value: T) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-function uid(prefix = "") {
-  return prefix + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-}
-function formNumber() {
-  // e.g. ADM-2026-000123
-  const year = new Date().getFullYear();
-  const n = Math.floor(Math.random() * 900000 + 100000);
-  return `ADM-${year}-${n}`;
-}
+
+type AuthResponse = { token: string; user: User };
 
 // ===========================================================================
 // AUTH
 // ===========================================================================
-
-type StoredUser = User & { password: string };
 
 export async function signUp(input: {
   name: string;
   email: string;
   password: string;
 }): Promise<User> {
-  // ---- Replace with Supabase / Firebase auth ----
-  // Supabase:
-  //   const { data, error } = await supabase.auth.signUp({
-  //     email: input.email, password: input.password,
-  //     options: { data: { name: input.name } }
-  //   });
-  //   if (error) throw error;
-  //   return { id: data.user!.id, email: data.user!.email!, name: input.name };
-  // -----------------------------------------------
-  const users = read<StoredUser[]>(LS_USERS, []);
-  if (users.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
-    throw new Error("An account with this email already exists");
-  }
-  const user: StoredUser = {
-    id: uid("u_"),
-    name: input.name,
-    email: input.email,
-    password: input.password,
-  };
-  users.push(user);
-  write(LS_USERS, users);
-  const pub: User = { id: user.id, email: user.email, name: user.name };
-  write(LS_SESSION, pub);
-  return pub;
+  const res = await apiRequest<AuthResponse>("/auth/signup", {
+    method: "POST",
+    body: input,
+    anonymous: true,
+  });
+  setToken(res.token);
+  cacheUser(res.user);
+  return res.user;
 }
 
 export async function signIn(input: {
   email: string;
   password: string;
 }): Promise<User> {
-  // ---- Replace with Supabase / Firebase auth ----
-  // Supabase:
-  //   const { data, error } = await supabase.auth.signInWithPassword(input);
-  //   if (error) throw error;
-  //   return { id: data.user!.id, email: data.user!.email!,
-  //            name: data.user!.user_metadata?.name ?? "" };
-  // -----------------------------------------------
-  const users = read<StoredUser[]>(LS_USERS, []);
-  const found = users.find(
-    (u) =>
-      u.email.toLowerCase() === input.email.toLowerCase() &&
-      u.password === input.password,
-  );
-  if (!found) throw new Error("Invalid email or password");
-  const pub: User = { id: found.id, email: found.email, name: found.name };
-  write(LS_SESSION, pub);
-  return pub;
+  const res = await apiRequest<AuthResponse>("/auth/login", {
+    method: "POST",
+    body: input,
+    anonymous: true,
+  });
+  setToken(res.token);
+  cacheUser(res.user);
+  return res.user;
 }
 
 export async function signOut(): Promise<void> {
-  // Supabase: await supabase.auth.signOut();
-  if (typeof window !== "undefined") window.localStorage.removeItem(LS_SESSION);
+  try {
+    await apiRequest("/auth/logout", { method: "POST" });
+  } catch {
+    // Ignore — we still clear the client session below.
+  }
+  setToken(null);
+  cacheUser(null);
 }
 
+/**
+ * Synchronous — reads the cached user from localStorage.
+ * Populated by signIn / signUp above. To re-validate against the server
+ * on app boot, call `refreshCurrentUser()` (async) from your AuthProvider.
+ */
 export function getCurrentUser(): User | null {
-  // Supabase: read from onAuthStateChange / getSession
-  return read<User | null>(LS_SESSION, null);
+  return readCachedUser();
+}
+
+/** Optional: re-fetches /auth/me to make sure the cached user is still valid. */
+export async function refreshCurrentUser(): Promise<User | null> {
+  try {
+    const res = await apiRequest<{ user: User }>("/auth/me");
+    cacheUser(res.user);
+    return res.user;
+  } catch {
+    setToken(null);
+    cacheUser(null);
+    return null;
+  }
 }
 
 // ===========================================================================
-// ADMISSIONS (CRUD)
+// ADMISSIONS (CRUD + search)
 // ===========================================================================
 
 export async function createAdmission(
   input: Omit<Admission, "id" | "createdAt" | "createdBy">,
-  userId: string,
+  _userId: string,
 ): Promise<Admission> {
-  // ---- Replace with Supabase / Firebase ----
-  // Supabase:
-  //   const { data, error } = await supabase.from("admissions")
-  //     .insert({ ...input, created_by: userId })
-  //     .select().single();
-  //   if (error) throw error;
-  //   return data as Admission;
-  // ------------------------------------------
-  const list = read<Admission[]>(LS_ADMISSIONS, []);
-  const record: Admission = {
-    ...input,
-    id: formNumber(),
-    createdAt: new Date().toISOString(),
-    createdBy: userId,
-  };
-  list.unshift(record);
-  write(LS_ADMISSIONS, list);
-  return record;
+  // `createdBy` is derived server-side from the auth token, so we don't send it.
+  return apiRequest<Admission>("/admissions", {
+    method: "POST",
+    body: input,
+  });
 }
 
 export async function listAdmissions(): Promise<Admission[]> {
-  // Supabase:
-  //   const { data, error } = await supabase.from("admissions")
-  //     .select("*").order("created_at", { ascending: false });
-  //   if (error) throw error;
-  //   return data as Admission[];
-  return read<Admission[]>(LS_ADMISSIONS, []);
+  return apiRequest<Admission[]>("/admissions");
 }
 
 export async function getAdmission(id: string): Promise<Admission | null> {
-  // Supabase:
-  //   const { data } = await supabase.from("admissions")
-  //     .select("*").eq("id", id).maybeSingle();
-  //   return (data as Admission) ?? null;
-  const list = read<Admission[]>(LS_ADMISSIONS, []);
-  return list.find((a) => a.id === id) ?? null;
+  try {
+    return await apiRequest<Admission>(`/admissions/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (err instanceof Error && "status" in err && (err as { status: number }).status === 404) {
+      return null;
+    }
+    throw err;
+  }
 }
 
 export async function updateAdmission(
   id: string,
   patch: Partial<Omit<Admission, "id" | "createdAt" | "createdBy">>,
 ): Promise<Admission> {
-  // Supabase:
-  //   const { data, error } = await supabase.from("admissions")
-  //     .update(patch).eq("id", id).select().single();
-  //   if (error) throw error;
-  //   return data as Admission;
-  const list = read<Admission[]>(LS_ADMISSIONS, []);
-  const i = list.findIndex((a) => a.id === id);
-  if (i === -1) throw new Error("Admission not found");
-  list[i] = { ...list[i], ...patch };
-  write(LS_ADMISSIONS, list);
-  return list[i];
+  return apiRequest<Admission>(`/admissions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: patch,
+  });
 }
 
 export async function deleteAdmission(id: string): Promise<void> {
-  // Supabase:
-  //   const { error } = await supabase.from("admissions").delete().eq("id", id);
-  //   if (error) throw error;
-  const list = read<Admission[]>(LS_ADMISSIONS, []);
-  write(LS_ADMISSIONS, list.filter((a) => a.id !== id));
+  await apiRequest(`/admissions/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
 /**
- * Search by form number, student name, or mobile number.
- * Case-insensitive, partial match.
+ * Search by form number, student name, or mobile.
+ * The backend should match case-insensitively on all three fields.
  */
 export async function searchAdmissions(query: string): Promise<Admission[]> {
-  // Supabase (example — needs a `search_admissions` RPC or ilike filters):
-  //   const q = `%${query}%`;
-  //   const { data } = await supabase.from("admissions").select("*")
-  //     .or(`id.ilike.${q},student_name.ilike.${q},mobile.ilike.${q}`);
-  //   return (data as Admission[]) ?? [];
-  const q = query.trim().toLowerCase();
+  const q = query.trim();
   if (!q) return [];
-  const list = read<Admission[]>(LS_ADMISSIONS, []);
-  return list.filter(
-    (a) =>
-      a.id.toLowerCase().includes(q) ||
-      a.studentName.toLowerCase().includes(q) ||
-      a.mobile.toLowerCase().includes(q),
-  );
+  return apiRequest<Admission[]>("/admissions/search", {
+    query: { q },
+  });
 }
