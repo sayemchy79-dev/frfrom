@@ -11,6 +11,9 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AuthProvider, useAuth } from "../lib/auth-context";
+import { Toaster } from "../components/ui/sonner";
+import { Button } from "../components/ui/button";
 
 function NotFoundComponent() {
   return (
@@ -77,20 +80,23 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "School Admission Portal" },
+      {
+        name: "description",
+        content:
+          "Online school admission form portal with secure sign-up, submission, and student record search.",
+      },
+      { property: "og:title", content: "School Admission Portal" },
+      {
+        property: "og:description",
+        content:
+          "Submit and search school admission forms online — fast, secure, and easy.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
+      { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
@@ -114,13 +120,74 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+function Header() {
+  const { user, signOut } = useAuth();
+  const router = useRouter();
+  return (
+    <header className="border-b border-border bg-card">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+        <Link to="/" className="text-lg font-semibold text-foreground">
+          School Admission Portal
+        </Link>
+        <nav className="flex items-center gap-2">
+          <Link
+            to="/"
+            className="rounded-md px-3 py-1.5 text-sm text-foreground hover:bg-accent"
+          >
+            Home
+          </Link>
+          {user ? (
+            <>
+              <Link
+                to="/admission"
+                className="rounded-md px-3 py-1.5 text-sm text-foreground hover:bg-accent"
+              >
+                New Admission
+              </Link>
+              <Link
+                to="/admissions"
+                className="rounded-md px-3 py-1.5 text-sm text-foreground hover:bg-accent"
+              >
+                All Records
+              </Link>
+              <span className="hidden text-sm text-muted-foreground sm:inline">
+                {user.name}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await signOut();
+                  router.navigate({ to: "/auth" });
+                }}
+              >
+                Sign out
+              </Button>
+            </>
+          ) : (
+            <Link
+              to="/auth"
+              className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Sign in
+            </Link>
+          )}
+        </nav>
+      </div>
+    </header>
+  );
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <AuthProvider>
+        <Header />
+        <Outlet />
+        <Toaster richColors position="top-right" />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
