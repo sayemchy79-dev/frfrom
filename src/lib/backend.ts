@@ -197,6 +197,31 @@ export async function getAdmission(id: string): Promise<Admission | null> {
   return list.find((a) => a.id === id) ?? null;
 }
 
+export async function updateAdmission(
+  id: string,
+  patch: Partial<Omit<Admission, "id" | "createdAt" | "createdBy">>,
+): Promise<Admission> {
+  // Supabase:
+  //   const { data, error } = await supabase.from("admissions")
+  //     .update(patch).eq("id", id).select().single();
+  //   if (error) throw error;
+  //   return data as Admission;
+  const list = read<Admission[]>(LS_ADMISSIONS, []);
+  const i = list.findIndex((a) => a.id === id);
+  if (i === -1) throw new Error("Admission not found");
+  list[i] = { ...list[i], ...patch };
+  write(LS_ADMISSIONS, list);
+  return list[i];
+}
+
+export async function deleteAdmission(id: string): Promise<void> {
+  // Supabase:
+  //   const { error } = await supabase.from("admissions").delete().eq("id", id);
+  //   if (error) throw error;
+  const list = read<Admission[]>(LS_ADMISSIONS, []);
+  write(LS_ADMISSIONS, list.filter((a) => a.id !== id));
+}
+
 /**
  * Search by form number, student name, or mobile number.
  * Case-insensitive, partial match.
