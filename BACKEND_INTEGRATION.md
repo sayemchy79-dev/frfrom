@@ -46,6 +46,9 @@ root. It is idempotent (safe to re-run) and sets up:
 ## 3. Auth
 
 - Email/password. Sign-up stores the display name in `user_metadata.name`.
+- Browser auth requests are sent through the same-origin `/api/pluto/*` proxy
+  before reaching Pluto. This avoids frontend CORS failures on
+  `/auth/v1/token` while still using only the public anon key in the browser.
 - Session is persisted in `localStorage` (`sa_pluto_session`) and refreshed
   automatically (`autoRefreshToken: true`). Login survives reloads.
 - `AuthProvider` re-validates the session on mount via
