@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as StudentIdRouteImport } from './routes/student.$id'
 import { Route as AuthenticatedAdmissionsRouteImport } from './routes/_authenticated/admissions'
 import { Route as AuthenticatedAdmissionRouteImport } from './routes/_authenticated/admission'
+import { Route as ApiPlutoSplatRouteImport } from './routes/api/pluto/$'
 import { Route as AuthenticatedAdmissionIdEditRouteImport } from './routes/_authenticated/admission.$id.edit'
 
 const AuthRoute = AuthRouteImport.update({
@@ -46,6 +47,11 @@ const AuthenticatedAdmissionRoute = AuthenticatedAdmissionRouteImport.update({
   path: '/admission',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const ApiPlutoSplatRoute = ApiPlutoSplatRouteImport.update({
+  id: '/api/pluto/$',
+  path: '/api/pluto/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAdmissionIdEditRoute =
   AuthenticatedAdmissionIdEditRouteImport.update({
     id: '/$id/edit',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/admission': typeof AuthenticatedAdmissionRouteWithChildren
   '/admissions': typeof AuthenticatedAdmissionsRoute
   '/student/$id': typeof StudentIdRoute
+  '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/admission/$id/edit': typeof AuthenticatedAdmissionIdEditRoute
 }
 export interface FileRoutesByTo {
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/admission': typeof AuthenticatedAdmissionRouteWithChildren
   '/admissions': typeof AuthenticatedAdmissionsRoute
   '/student/$id': typeof StudentIdRoute
+  '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/admission/$id/edit': typeof AuthenticatedAdmissionIdEditRoute
 }
 export interface FileRoutesById {
@@ -77,6 +85,7 @@ export interface FileRoutesById {
   '/_authenticated/admission': typeof AuthenticatedAdmissionRouteWithChildren
   '/_authenticated/admissions': typeof AuthenticatedAdmissionsRoute
   '/student/$id': typeof StudentIdRoute
+  '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/_authenticated/admission/$id/edit': typeof AuthenticatedAdmissionIdEditRoute
 }
 export interface FileRouteTypes {
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
     | '/admission'
     | '/admissions'
     | '/student/$id'
+    | '/api/pluto/$'
     | '/admission/$id/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
     | '/admission'
     | '/admissions'
     | '/student/$id'
+    | '/api/pluto/$'
     | '/admission/$id/edit'
   id:
     | '__root__'
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admission'
     | '/_authenticated/admissions'
     | '/student/$id'
+    | '/api/pluto/$'
     | '/_authenticated/admission/$id/edit'
   fileRoutesById: FileRoutesById
 }
@@ -112,6 +124,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   StudentIdRoute: typeof StudentIdRoute
+  ApiPlutoSplatRoute: typeof ApiPlutoSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdmissionRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/pluto/$': {
+      id: '/api/pluto/$'
+      path: '/api/pluto/$'
+      fullPath: '/api/pluto/$'
+      preLoaderRoute: typeof ApiPlutoSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/admission/$id/edit': {
       id: '/_authenticated/admission/$id/edit'
       path: '/$id/edit'
@@ -200,6 +220,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   StudentIdRoute: StudentIdRoute,
+  ApiPlutoSplatRoute: ApiPlutoSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
