@@ -40,10 +40,12 @@ async function proxyToPluto(request: Request, splat?: string) {
 
   const sourceUrl = new URL(request.url);
   const targetUrl = `${getPlutoUrl()}${path}${sourceUrl.search}`;
+  const body =
+    request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
   const upstream = await fetch(targetUrl, {
     method: request.method,
     headers: proxyHeaders(request),
-    body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+    body,
   });
 
   return new Response(upstream.body, {
