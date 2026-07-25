@@ -54,9 +54,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     });
 
+    // Proactively refresh the session when the tab becomes visible again or
+    // the network reconnects — otherwise the first API call after long
+    // inactivity can race an expired access token and 401.
+    const refresh = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      pluto.auth.refreshSession().catch(() => {
+        // If refresh fails (e.g. refresh token revoked), fall back to a full re-check.
+        refreshCurrentUser().then((u) => setUser(u)).catch(() => setUser(null));
+      });
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
       cancelled = true;
       sub.subscription.unsubscribe();
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
